@@ -41,10 +41,24 @@ It is used by:
 | `/usr/share/gir-1.0/Blur-1.0.gir` | Introspection source |
 | `/usr/include/blur-effect-1.0/` and `/usr/lib/pkgconfig/blur-effect-1.0.pc` | Development files |
 
+## Source
+
+`upstream/` holds an unmodified copy of the upstream library, so the package
+builds only from this repository:
+
+| | |
+|---|---|
+| Upstream repository | <https://github.com/kancko/gnome-rounded-blur> (branch `master`) |
+| Imported release | `v1.0.2` |
+| Imported commit | `a4db9e5947b1cea0a05c57768356921420f91293` |
+
+Do not edit files under `upstream/`. Fixes belong upstream; import them with a
+new release.
+
 ## Building
 
-The PKGBUILD builds a pinned upstream commit with Meson against the installed
-mutter, then checks that the library loads and creates a rounded effect:
+The PKGBUILD builds `upstream/` with Meson against the installed mutter, then
+checks that the library loads and creates a rounded effect:
 
 ```sh
 cd pkgbuild
@@ -57,10 +71,20 @@ The library links against mutter's versioned libraries (`libmutter-clutter-51`,
 `libmutter-cogl-51`). **Rebuild this package for every new GNOME major release.**
 Until it is rebuilt, the extensions detect the mismatch and use rectangular blur.
 
-To update upstream, change `_upstream_commit` in `pkgbuild/PKGBUILD` to a reviewed
-commit and confirm that `check()` passes against the target mutter.
+To import a new upstream release:
+
+```sh
+git clone https://github.com/kancko/gnome-rounded-blur.git /tmp/rounded-blur
+git -C /tmp/rounded-blur log --oneline a4db9e5..master   # review the changes
+rm -rf upstream && mkdir upstream
+git -C /tmp/rounded-blur archive <tag> | tar -x -C upstream
+```
+
+Then update the release and commit in the table above, build the package, and
+confirm that `check()` passes against the target mutter.
 
 ## License
 
-The packaged library is licensed under GPL-3.0-or-later by its upstream authors.
+The library in `upstream/` is licensed under GPL-3.0-or-later by its upstream
+authors (`upstream/LICENSE`).
 The packaging files in this repository are licensed under the MIT License.

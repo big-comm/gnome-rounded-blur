@@ -13,12 +13,8 @@ pkgrel=$(date +%H%M)
 arch=('x86_64')
 license=('GPL-3.0-or-later')
 url="https://github.com/big-comm/${pkgname}"
-# Upstream v1.0.2: first release that builds and runs on mutter 51.
-_upstream_commit=a4db9e5947b1cea0a05c57768356921420f91293
-source=("git+${url}.git"
-        "${pkgname}-upstream::git+https://github.com/kancko/gnome-rounded-blur.git#commit=${_upstream_commit}")
-md5sums=('SKIP'
-         'SKIP')
+source=("git+${url}.git")
+md5sums=('SKIP')
 
 # Automatically detect and use the correct install file
 if [ -e "${pkgname}.install" ]; then
@@ -33,7 +29,8 @@ prepare() {
 
 build() {
     cd "${srcdir}/${pkgname}"
-    arch-meson "${srcdir}/${pkgname}-upstream" "${srcdir}/build"
+    # upstream/ holds the unmodified library source (see README.md)
+    arch-meson upstream "${srcdir}/build"
     meson compile -C "${srcdir}/build"
 }
 
@@ -65,7 +62,7 @@ package() {
     meson install -C "${srcdir}/build" --destdir "${pkgdir}"
 
     # The upstream license covers the packaged library
-    install -Dm644 "${srcdir}/${pkgname}-upstream/LICENSE" \
+    install -Dm644 upstream/LICENSE \
         "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
 
     # Install documentation if present
