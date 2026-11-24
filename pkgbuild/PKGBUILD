@@ -1,18 +1,17 @@
 # Maintainer: Tales A. Mendonça <talesam@gmail.com>
 
-pkgname=pkgbuild-template
-pkgdesc="Package template for Communitybig"
-# Uncomment and edit the following lines as needed
-#depends=('')
-#makedepends=('')
+pkgname=gnome-rounded-blur
+pkgdesc="Rounded-corner blur effect for GNOME Shell, used by Frosted Glass and Big Clipboard"
+depends=('glib2' 'mutter>=51')
+makedepends=('git' 'meson' 'gobject-introspection' 'gjs')
 #optdepends=('')
 #conflicts=('')
 #provides=('')
 #replaces=('')
 pkgver=$(date +%y.%m.%d)
 pkgrel=$(date +%H%M)
-arch=('any')
-license=('MIT')
+arch=('x86_64')
+license=('GPL-3.0-or-later')
 url="https://github.com/big-comm/${pkgname}"
 source=("git+${url}.git")
 md5sums=('SKIP')
@@ -26,44 +25,45 @@ fi
 
 prepare() {
     cd "${srcdir}/${pkgname}"
-    # Add any preparation steps here, if needed
-    # For example: patch -p1 < "${srcdir}/patch-file.patch"
 }
 
 build() {
     cd "${srcdir}/${pkgname}"
-    # Add build steps here, if needed
-    # For example: make
+    # upstream/ holds the unmodified library source (see README.md)
+    arch-meson upstream "${srcdir}/build"
+    meson compile -C "${srcdir}/build"
 }
 
 check() {
     cd "${srcdir}/${pkgname}"
-    # Add check/test steps here, if needed
-    # For example: make check
+    # Resolve every symbol now (as GNOME Shell's extensions probe it) and
+    # create a rounded background effect against the installed mutter.
+    local typelib mutterLib clutterVersion
+    typelib=$(echo /usr/lib/mutter-*/Clutter-*.typelib)
+    mutterLib=${typelib%/*}
+    clutterVersion=${typelib##*/Clutter-}
+    clutterVersion=${clutterVersion%.typelib}
+    GI_TYPELIB_PATH="${srcdir}/build/src:${mutterLib}" \
+    LD_LIBRARY_PATH="${srcdir}/build/src:${mutterLib}" \
+    LD_BIND_NOW=1 \
+    gjs -c "imports.gi.versions.Clutter = '${clutterVersion}';
+        const Blur = imports.gi.Blur;
+        const effect = new Blur.BlurEffect({mode: Blur.BlurMode.BACKGROUND});
+        effect.corner_radius = 24;
+        if (effect.corner_radius !== 24)
+            throw new Error('corner radius was not applied');
+        // gjs -c exits with the last expression value; end on a statement.
+        print('Rounded blur effect loads');"
 }
 
 package() {
     cd "${srcdir}/${pkgname}"
 
-    # Determine the correct source directory
-    if [ -d "${pkgname}" ]; then
-        srcdir="${srcdir}/${pkgname}/${pkgname}"
-    else
-        srcdir="${srcdir}/${pkgname}"
-    fi
+    meson install -C "${srcdir}/build" --destdir "${pkgdir}"
 
-    # Install files
-    local dirs=("usr" "etc" "opt")
-    for dir in "${dirs[@]}"; do
-        if [ -d "${srcdir}/${dir}" ]; then
-            cp -a "${srcdir}/${dir}" "${pkgdir}/"
-        fi
-    done
-
-    # Install license file if present
-    if [ -f "LICENSE" ]; then
-        install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
-    fi
+    # The upstream license covers the packaged library
+    install -Dm644 upstream/LICENSE \
+        "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
 
     # Install documentation if present
     if [ -f "README.md" ]; then
