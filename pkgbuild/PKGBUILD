@@ -25,11 +25,16 @@ fi
 
 prepare() {
     cd "${srcdir}/${pkgname}"
+    # Fixes not released upstream yet (see README.md)
+    local patch
+    for patch in patches/*.patch; do
+        patch -p1 < "${patch}"
+    done
 }
 
 build() {
     cd "${srcdir}/${pkgname}"
-    # upstream/ holds the unmodified library source (see README.md)
+    # upstream/ holds the library source, patched in prepare() (see README.md)
     arch-meson upstream "${srcdir}/build"
     meson compile -C "${srcdir}/build"
 }

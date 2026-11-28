@@ -1,0 +1,128 @@
+diff --git a/upstream/src/rounded-blur-effect.c b/upstream/src/rounded-blur-effect.c
+index 96d16e8..54e1dd2 100644
+--- a/upstream/src/rounded-blur-effect.c
++++ b/upstream/src/rounded-blur-effect.c
+@@ -97,10 +97,15 @@ struct _GbBlurEffect
+ 
+   float corner_radius;
+ 
++  /* Clipped redraws in a row that asked for a whole one. */
++  unsigned int partial_redraws;
++
+   /* Not owned: borrowed from the backend of the actor's ClutterContext. */
+   CoglContext *cogl_context;
+ };
+ 
++#define MAX_PARTIAL_REDRAWS 3
++
+ G_DEFINE_TYPE (GbBlurEffect, gb_blur_effect, CLUTTER_TYPE_EFFECT)
+ 
+ enum {
+@@ -754,8 +759,61 @@ paint_actor_offscreen (GbBlurEffect           *self,
+     }
+ }
+ 
++/* A redraw clipped to part of the surface leaves the rest of the framebuffer
++ * holding the previous frame, with this surface and what is above it already
++ * drawn. Blurring that again shows the clipped part in a different shade for a
++ * frame, so such a redraw keeps the blur of the last whole one.
++ */
++static gboolean
++redraw_covers_surface (GbBlurEffect        *self,
++                       ClutterPaintContext *paint_context)
++{
++  ClutterStageView *stage_view;
++  const MtkRegion *redraw_clip;
++  MtkRectangle view_layout;
++  MtkRectangle surface;
++  float x, y, width, height;
++
++  stage_view = clutter_paint_context_get_stage_view (paint_context);
++  redraw_clip = clutter_paint_context_get_redraw_clip (paint_context);
++  if (!stage_view || !redraw_clip)
++    return TRUE;
++
++  clutter_actor_get_transformed_position (self->actor, &x, &y);
++  clutter_actor_get_transformed_size (self->actor, &width, &height);
++  surface = (MtkRectangle) {
++    .x = floorf (x),
++    .y = floorf (y),
++    .width = ceilf (x + width) - floorf (x),
++    .height = ceilf (y + height) - floorf (y),
++  };
++
++  /* The clip never reaches the part of a surface outside the view. */
++  clutter_stage_view_get_layout (stage_view, &view_layout);
++  if (!mtk_rectangle_intersect (&surface, &view_layout, &surface))
++    return TRUE;
++
++  return mtk_region_contains_rectangle (redraw_clip, &surface) ==
++         MTK_REGION_OVERLAP_IN;
++}
++
++static gboolean
++blur_matches_surface (GbBlurEffect        *self,
++                      ClutterPaintContext *paint_context)
++{
++  ClutterActorBox source_actor_box;
++  float width, height;
++
++  update_actor_box (self, paint_context, &source_actor_box);
++  clutter_actor_box_get_size (&source_actor_box, &width, &height);
++
++  return self->tex_width == (unsigned int) width &&
++         self->tex_height == (unsigned int) height;
++}
++
+ static gboolean
+ needs_repaint (GbBlurEffect         *self,
++               ClutterPaintContext  *paint_context,
+                ClutterEffectPaintFlags  flags)
+ {
+   gboolean actor_cached;
+@@ -772,7 +830,9 @@ needs_repaint (GbBlurEffect         *self,
+       return actor_dirty || !blur_cached || !actor_cached;
+ 
+     case GB_BLUR_MODE_BACKGROUND:
+-      return TRUE;
++      return !blur_cached ||
++             !blur_matches_surface (self, paint_context) ||
++             redraw_covers_surface (self, paint_context);
+     }
+ 
+   return TRUE;
+@@ -811,7 +871,7 @@ gb_blur_effect_paint_node (ClutterEffect           *effect,
+           break;
+         }
+ 
+-      if (needs_repaint (self, flags))
++      if (needs_repaint (self, paint_context, flags))
+         {
+           ClutterActorBox source_actor_box;
+ 
+@@ -824,6 +884,7 @@ gb_blur_effect_paint_node (ClutterEffect           *effect,
+             goto fail;
+ 
+           blur_node = create_blur_nodes (self, node, paint_opacity);
++          self->partial_redraws = 0;
+ 
+           switch (self->mode)
+             {
+@@ -840,6 +901,17 @@ gb_blur_effect_paint_node (ClutterEffect           *effect,
+         {
+           /* Use the cached pipeline if no repaint is needed */
+           add_blurred_pipeline (self, node, paint_opacity);
++
++          /* What is behind the surface may have changed inside the clip, so
++           * ask for a whole redraw. A clip that can never cover the surface
++           * must not keep the compositor painting.
++           */
++          if (self->mode == GB_BLUR_MODE_BACKGROUND &&
++              self->partial_redraws < MAX_PARTIAL_REDRAWS)
++            {
++              self->partial_redraws++;
++              clutter_effect_queue_repaint (effect);
++            }
+         }
+ 
+       /* Background blur needs to paint the actor after painting the blurred

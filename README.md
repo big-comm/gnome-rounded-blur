@@ -53,7 +53,14 @@ builds only from this repository:
 | Imported commit | `a4db9e5947b1cea0a05c57768356921420f91293` |
 
 Do not edit files under `upstream/`. Fixes belong upstream; import them with a
-new release.
+new release. A fix that upstream has not released is kept in `patches/` and
+applied by the PKGBUILD before the build:
+
+| Patch | What it fixes |
+|---|---|
+| `0001-keep-the-blur-across-clipped-redraws.patch` | Blurred surfaces flickered while something above them animated. A redraw clipped to part of a surface blurred a framebuffer that already held the surface itself, so that part showed in a different shade for a frame. Such a redraw keeps the last whole blur and asks for a whole redraw. |
+
+Drop a patch when the release that carries its fix is imported.
 
 ## Building
 
@@ -80,7 +87,8 @@ rm -rf upstream && mkdir upstream
 git -C /tmp/rounded-blur archive <tag> | tar -x -C upstream
 ```
 
-Then update the release and commit in the table above, build the package, and
+Then update the release and commit in the table above, check that each patch
+in `patches/` still applies or is no longer needed, build the package, and
 confirm that `check()` passes against the target mutter.
 
 ## License
